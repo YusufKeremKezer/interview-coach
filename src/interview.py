@@ -2,8 +2,9 @@ from crewai import Agent, Task , Crew, Process
 from crewai_tools import SerperDevTool
 from pydantic import BaseModel, Field
 import asyncio
+from crewai.llm import LLM
 
-
+llm = LLM(model="gemini/gemini-2.5-flash",base_url="https://generativelanguage.googleapis.com", temperature=0.7)
 
 class QuestionAnswerPair(BaseModel):
     """Model representing a question and its corresponding answer."""
@@ -15,13 +16,13 @@ search_tool = SerperDevTool()
 
 
 
-
 company_researcher_agent = Agent(
     role="Company Research Specialist",
     goal=" Gather information about the company and create interview questions with answers",
     backstory="""You are an expert in researching companies and  creating technical interview questions. Questions that test both theorical knowledge and technical skills.""",
     tools=[search_tool],
-    verbose=True
+    verbose=True,
+    llm=llm
 )
 
 
@@ -30,8 +31,9 @@ question_preparer_agent = Agent(
     goal="Prepare interview questions and answers based on the research provided by the Company Research Specialist.",
     backstory="""You are an expert in researching companies and creating technical interview questions.
     You have deep knowledge of tech industry hiring practices and can create relevant
-    questions that test both theoretical knowledge and practical skills."""
-    verbose=True
+    questions that test both theoretical knowledge and practical skills.""",
+    verbose=True,
+    llm=llm
     )
 
 follow_up_questioner_agent = Agent(
@@ -41,7 +43,8 @@ follow_up_questioner_agent = Agent(
     meaningful follow-up questions that probe deeper into a candidate's knowledge
     and understanding. You can create questions that build upon previous answers
     and test different aspects of the candidate's technical expertise.""",
-    verbose=True
+    verbose=True,
+    llm=llm
     )
 
 answer_evaluator_agent = Agent(
@@ -51,6 +54,7 @@ answer_evaluator_agent = Agent(
     against the expected solution. You know how to identify if an answer is
     technically correct and complete.""",
     verbose=True,
+    llm=llm
 )
 
 def create_company_research_task(company_name: str, role: str, difficulty: str) -> Task:
@@ -72,7 +76,7 @@ def create_question_preparation_task(difficulty: str) -> Task:
         name="Question Preparation Task",
         description=f"Prepare interview questions and answers of {difficulty} difficulty based on the research provided.",
         agent=question_preparer_agent,
-        expected_output="A list of interview questions and their correct answers",
+        expected_output="Interview question and its correct answer",
         output_pydantic=QuestionAnswerPair,
     )
 
@@ -117,7 +121,7 @@ def create_researcher_crew(company_name: str, role: str, difficulty: str,) -> Cr
             create_question_preparation_task(difficulty)],
         name="Researcher Crew",
         description="This crew is responsible for researching companies and preparing interview questions.",
-        process=Process.Sequential,  # chain process
+        process=Process.sequential,  # chain process
     )
 
 
@@ -130,12 +134,12 @@ def create_evaluator_crew(question: str, user_answer: str, correct_answer: str) 
                 user_answer=user_answer,
                 correct_answer=correct_answer,
             )
-        ]
+        ],
     )
     return evaluation_crew
 
 
-def create_followup_crew(question: str, difficulty: str, company: str, role: str) -> Crew:
+async def create_followup_crew(question: str, difficulty: str, company: str, role: str) -> Crew:
     followup_crew = Crew(
         agents=[follow_up_questioner_agent],
         tasks=[
@@ -145,31 +149,35 @@ def create_followup_crew(question: str, difficulty: str, company: str, role: str
                 company=company,
                 role=role,
             )
-        ]
+        ],
     )
     return followup_crew
 
 
-async def run_interview_process(company_name: str, role: str, difficulty: str, user_answer: str):
+async def run_interview_process(company_name: str, role: str, difficulty: str):
     # Step 1: Research and prepare questions
     researcher_crew = create_researcher_crew(company_name, role, difficulty)
-    research_results = await researcher_crew.run()
+    research_results = researcher_crew.kickoff()
 
-    # Extract the first question and answer for evaluation
-    first_question_answer = research_results[1][0]  # Assuming the first question-answer pair
-    question = first_question_answer.question
-    correct_answer = first_question_answer.answer
+    print(f"Research Results: {research_results}")
+    user_answer = input("Enter your answer: ")
 
     # Step 2: Evaluate user's answer
-    evaluator_crew = create_evaluator_crew(question, user_answer, correct_answer)
-    evaluation_results = await evaluator_crew.run()
+    evaluator_crew = create_evaluator_crew(research_results.pydantic.question, user_answer, research_results.pydantic.answer)
+    evaluation_results = evaluator_crew.kickoff()
 
     # Step 3: Create follow-up question
-    followup_crew = create_followup_crew(question, difficulty, company_name, role)
-    followup_results = await followup_crew.run()
+    followup_crew = await create_followup_crew(research_results.pydantic.question
+, difficulty, company_name, role)
+
+    followup_results = await followup_crew.kickoff()
 
     return {
         "research": research_results,
         "evaluation": evaluation_results,
         "follow_up": followup_results,
     }
+
+
+if __name__ == "__main__":
+    asyncio.run(run_interview_process(company_name="Google", role="AI Engineer", difficulty="Medium"))
