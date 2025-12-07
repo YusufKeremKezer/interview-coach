@@ -30,7 +30,7 @@ question_preparer_agent = Agent(
     goal="Prepare interview questions and answers based on the research provided by the Company Research Specialist.",
     backstory="""You are an expert in researching companies and creating technical interview questions.
     You have deep knowledge of tech industry hiring practices and can create relevant
-    questions that test both theoretical knowledge and practical skills."""
+    questions that test both theoretical knowledge and practical skills.""",
     verbose=True
     )
 
