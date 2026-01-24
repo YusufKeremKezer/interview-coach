@@ -1,51 +1,82 @@
-import sounddevice as sd
-import numpy as np
-from scipy.io.wavfile import write
-from transformers import pipeline
-import collections
-import time
-from ten_vad import TenVad
-# Pipeline yükle
-from together import Together
+# Start by making sure the `assemblyai` and `pyaudio` packages are installed.
+# If not, you can install it by running the following command:
+# pip install assemblyai pyaudio
+#
+# Note: Some macOS users may need to use `pip3` instead of `pip`.
 
-client = Together()
-response = client.audio.transcribe(
-    model="openai/whisper-large-v3",
-    language="en",
-    response_format="json",
-    timestamp_granularities="segment"
+import assemblyai as aai
+from assemblyai.streaming.v3 import (
+     BeginEvent,
+    StreamingClient,
+    StreamingClientOptions,
+    StreamingError,
+    StreamingEvents,
+    StreamingParameters,
+    StreamingSessionParameters,
+    TerminationEvent,
+    TurnEvent,
 )
-print(response.text)
+import logging
+from typing import Type
+from src.settings import Settings
+# Replace with your chosen API key, this is the "default" account api key
+api_key = Settings().ASSEMBLYAI_API_KEY
 
-# VAD ve parametreler
-sample_rate = 16000
-frame_duration = 80  # ms
-frame_size = int(sample_rate * frame_duration / 1000)  #  bytes (16-bit mono)
-silence_duration = 1.0  # sn sessizlik sonrası dur
-speech_frames = collections.deque()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-vad = TenVad(hop_size=80, threshold=0.5)
+def on_begin(self: Type[StreamingClient], event: BeginEvent):
+    print(f"Session started: {event.id}")
 
-def callback(indata, frames, time_info, status):
-    frame = (indata[:, 0] * 32767).astype(np.int16).tobytes()
-    if vad.is_speech(frame, sample_rate):
-        speech_frames.append(frame.copy())
-        silence_start = None
-    else:
-        if len(speech_frames) > 10:  # Minimum konuşma
-            if silence_start is None:
-                silence_start = time.time()
-            elif time.time() - silence_start > silence_duration:
-                # Transkribe
-                audio = np.concatenate(list(speech_frames))
-                write("speech.wav", sample_rate, audio)
-                # NeMo transcribe expects a list of files
-                # Note: This model is English-only (en). It does not support Turkish (tr).
-                result = asr_model.transcribe(["speech.wav"])
-                if result and len(result) > 0:
-                    print("Transkripsiyon:", result[0])
-                speech_frames.clear()
-                silence_start = None
+def on_turn(self: Type[StreamingClient], event: TurnEvent):
+    print(f"{event.transcript} ({event.end_of_turn})")
+    if event.end_of_turn and not event.turn_is_formatted:
+        params = StreamingSessionParameters(
+            format_turns=True,
+        )
+
+        self.set_params(params)
 
 
-#def transcribe_audio(audio_path: str):
+    
+def on_terminated(self: Type[StreamingClient], event: TerminationEvent):
+    print(
+        f"Session terminated: {event.audio_duration_seconds} seconds of audio processed"
+    )
+
+def on_error(self: Type[StreamingClient], error: StreamingError):
+    print(f"Error occurred: {error}")
+
+def main():
+    client = StreamingClient(
+        StreamingClientOptions(
+            api_key=api_key,
+            api_host="streaming.assemblyai.com",
+        )
+    )
+
+    client.on(StreamingEvents.Begin, on_begin)
+    client.on(StreamingEvents.Turn, on_turn)
+    client.on(StreamingEvents.Termination, on_terminated)
+    client.on(StreamingEvents.Error, on_error)
+
+    client.connect(
+        StreamingParameters(
+            sample_rate = 16000,
+            format_turns = True,
+            end_of_turn_confidence_threshold = 0.7,
+            min_end_of_turn_silence_when_confident = 800,
+            max_turn_silence = 3600,
+
+        )
+    )
+
+    try:
+        client.stream(
+            aai.extras.MicrophoneStream(sample_rate=16000)
+        )
+    finally:
+        client.disconnect(terminate=True)
+
+if __name__ == "__main__":
+    main()
