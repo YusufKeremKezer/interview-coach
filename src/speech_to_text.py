@@ -18,7 +18,11 @@ from assemblyai.streaming.v3 import (
 )
 import logging
 from typing import Type
-from src.settings import Settings
+from .settings import Settings
+import asyncio
+from .interview import create_question
+from .utils import run_step
+from .domain.models import UserResponse
 # Replace with your chosen API key, this is the "default" account api key
 api_key = Settings().ASSEMBLYAI_API_KEY
 
@@ -26,18 +30,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def on_begin(self: Type[StreamingClient], event: BeginEvent):
+    response = asyncio.run(create_question("Google", "AI Researcher", "Medium", True))
     print(f"Session started: {event.id}")
+    return response
 
 def on_turn(self: Type[StreamingClient], event: TurnEvent):
     print(f"{event.transcript} ({event.end_of_turn})")
-    if event.end_of_turn and not event.turn_is_formatted:
+    if event.end_of_turn:
         params = StreamingSessionParameters(
             format_turns=True,
         )
-
+    
         self.set_params(params)
-
-
+        UserResponse.response = event.transcript
+        asyncio.run(run_step())
+        
     
 def on_terminated(self: Type[StreamingClient], event: TerminationEvent):
     print(

@@ -1,9 +1,10 @@
 from crewai import Agent, Task , Crew, Process, LLM
 from crewai_tools import SerperDevTool
-from pydantic import BaseModel, Field
-from src.settings import Settings
-import asyncio
+
+from .settings import Settings
 import logging
+from .domain.models import QuestionAnswerPair, EvaluationResponse
+from .text_to_speech import message_to_speech
 
 settings = Settings()
 
@@ -14,10 +15,6 @@ llm = LLM(
     model="openrouter/tngtech/deepseek-r1t2-chimera:free",
     api_key=settings.OPENROUTER_API_KEY,
 )
-class QuestionAnswerPair(BaseModel):
-    """Model representing a question and its corresponding answer."""
-    question: str = Field(..., description="The interview question")
-    answer: str = Field(..., description="The interview answer")
 
 search_tool = SerperDevTool()
 
@@ -102,6 +99,7 @@ def create_evaluation_task(
         2. Key points that were correct or missing
         3. A brief explanation of why the answer is correct or incorrect""",
         expected_output="Evaluation of whether the answer is correct for the question with feedback",
+        output_pydantic=EvaluationResponse,
         agent=answer_evaluator_agent,
     )
 
@@ -155,49 +153,47 @@ def create_evaluator_crew(question: str, user_answer: str, correct_answer: str) 
 def create_followup_crew(question: str, user_answer: str, difficulty: str, company: str, role: str) -> Crew:
     followup_crew = Crew(
         agents=[follow_up_questioner_agent],
-        tasks=[
-            create_follow_up_question_task(
+        tasks=[create_follow_up_question_task(
                 question=question,
                 user_answer=user_answer,
                 difficulty=difficulty,
                 company=company,
+                output_pydantic=QuestionAnswerPair,
                 role=role,
                 context = [evaluation_task]
-            )
-        ]
+            )]
+        
     )
     return followup_crew
 
 
-async def run_interview_process(company_name: str, role: str, difficulty: str):
-    # Step 1: Research and prepare questions
+async def create_question(company_name: str, role: str, difficulty: str, is_voice_chat:bool = False):
+        # Step 1: Research and prepare questions
     researcher_crew = create_researcher_crew(company_name, role, difficulty)
     research_results = researcher_crew.kickoff()
 
     # Extract the first question and answer for evaluation
     question = research_results.pydantic.question
-    correct_answer = research_results.pydantic.answer
 
-    logger.info(f"Question: {question}")
-    user_answer = input("Enter your answer: ")
+    if is_voice_chat:
+        await message_to_speech(question)
+    else:
+        return question
+        
 
-    # Step 2: Evaluate user's answer
+async def evaluate_answer(question: str, user_answer: str, correct_answer: str, is_voice_chat: bool = False):
     evaluator_crew = create_evaluator_crew(question, user_answer, correct_answer)
     evaluation_results = evaluator_crew.kickoff()
+    if is_voice_chat:
+        await message_to_speech(evaluation_results.pydantic.evaluation_result)
+    else:
+        return evaluation_results.pydantic.evaluation_result
 
-    # Step 3: Create follow-up question
-    followup_crew = create_followup_crew(question, user_answer, difficulty, company_name, role)
+
+async def create_followup_question(question: str, user_answer: str, difficulty: str, company: str, role: str, is_voice_chat: bool = False):
+    followup_crew = create_followup_crew(question, user_answer, difficulty, company, role)
     followup_results = followup_crew.kickoff()
-
-    evaluator_crew = create_evaluator_crew(followup_results.pydantic.question, followup_results.pydantic.user_answer, followup_results.pydantic.answer)
-    evaluation_follow_up_results = await evaluator_crew.kickoff()
-    
-    return {
-        "research": research_results,
-        "evaluation": evaluation_results,
-        "follow_up": followup_results,
-        "evaluation_follow_up": evaluation_follow_up_results,
-    }
-
-if __name__ == "__main__":
-    asyncio.run(run_interview_process("Google", "AI Researcher", "Medium"))
+    if is_voice_chat:
+        await message_to_speech(followup_results.pydantic.question)
+    else:
+        return followup_results.pydantic.question
