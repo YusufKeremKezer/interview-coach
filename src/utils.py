@@ -1,19 +1,22 @@
 from .settings import settings
-from .domain.models import QuestionAnswerPair, EvaluationResponse, UserResponse
+from .domain.models import question_answer_pair, UserResponse
 from .interview import create_question, evaluate_answer, create_followup_question
 
-global number
+number = 1
 
 async def run_step():
+    global number
     try:
         match number:
-            case 1:
+            case 0:
                 return await create_question(settings.COMPANY_NAME, settings.ROLE, settings.DIFFICULTY, True)
+            case 1:
+                return await evaluate_answer(question_answer_pair.question, UserResponse.response, question_answer_pair.answer, True)
             case 2:
-                return await evaluate_answer(QuestionAnswerPair.question, UserResponse.response, QuestionAnswerPair.answer, True)
+                return await create_followup_question(question_answer_pair.question, UserResponse.response, settings.DIFFICULTY, settings.COMPANY_NAME, settings.ROLE, True)
             case 3:
-                return await create_followup_question(QuestionAnswerPair.question, UserResponse.response, settings.DIFFICULTY, settings.COMPANY_NAME, settings.ROLE, True)
-            case 4:
-                return await evaluate_answer(QuestionAnswerPair.question, UserResponse.response, QuestionAnswerPair.answer, True)
+                return await evaluate_answer(question_answer_pair.question, UserResponse.response, question_answer_pair.answer, True)
     finally:
         number += 1
+        if number == 4:
+            number = 0
