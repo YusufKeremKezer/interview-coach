@@ -5,16 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "assemblyai[extras]>=0.48.4",
-    "crewai[azure-ai-inference,tools]>=1.6.1",
-    "fastapi>=0.128.0",
-    "google-cloud-texttospeech>=2.34.0",
-    "hydra-core>=1.3.2",
-    "ipython>=9.8.0",
+    "assemblyai[extras]>=0.54.0",
+    "crewai>=1.6.1",
     "kokoro>=0.9.4",
-    "litellm>=1.81.3",
-    "scipy>=1.17.0",
-    "sounddevice>=0.5.5",
-    "soundfile>=0.13.1",
-    "transformers>=5.1.0",
+    "livekit-plugins-assemblyai>=1.4.4",
+    "python-dotenv>=1.2.2",
+    "silero>=0.5.5",
 ]

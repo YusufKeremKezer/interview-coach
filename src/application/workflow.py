@@ -5,12 +5,6 @@ from ..domain.models import InterviewState, stt_message
 from crewai.flow.flow import Flow, router, start, listen
 from .interview import create_researcher_crew, create_evaluator_crew
 from .text_to_speech import tts
-from .speech_to_text import start_stt
-
-start_stt()
-
-# Global queue for STT results
-
 
 class InterviewWorkflow(Flow[InterviewState]):
 
