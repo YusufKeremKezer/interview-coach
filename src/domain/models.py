@@ -15,9 +15,9 @@ class UserResponse(BaseModel):
     response: str = ""
 
 class InterviewState(BaseModel):
-    company_name: str = "Google"
-    role: str = "AI Engineer"
-    difficulty: str = "Easy"
+    company: str = "Baykar"
+    role: str = "LLM Engineer"
+    difficulty: str = "Medium"
     question: str = ""
     answer: str = ""
     evaluation_result: str = ""

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 llm = LLM(
-    model="openrouter/arcee-ai/trinity-large-preview:free",
+    model="gemini/gemini-2.5-flash",
     api_key=settings.OPENROUTER_API_KEY,
 )
 
@@ -23,9 +23,31 @@ company_researcher_agent = Agent(
     tools=[search_tool],
     verbose=True,
     llm=llm,
-    memory=True
+    memory=False
 )
 
+speech_router_agent = Agent(
+    role="Speech Router Agent",
+    goal="Message effectiveness evaluation",
+    backstory=""" 
+    You are senior speech expert
+    You are dealing with barge-in or complete responses.
+    You are a router of interview responses.
+    """,
+    llm=llm,
+    verbose=True,
+)
+
+speech_routing_task = Task(
+    description="""Route the given message to appropriate outcome: {message}
+
+    If message is complete return "Complete"
+    If message is interrupted return "Barge-in"
+
+    """,
+    agent=speech_router_agent,
+    expected_output="Complete or Barge-in",
+)
 
 question_preparer_agent = Agent(
     role="Question Preparer Voice Agent",
@@ -35,7 +57,7 @@ question_preparer_agent = Agent(
     questions that test both theoretical knowledge and practical skills.""",
     verbose=True,
     llm=llm,
-    memory=True
+    memory=False
     )
 
 follow_up_questioner_agent = Agent(
@@ -67,9 +89,9 @@ router_agent = Agent(
     llm=llm,
 )
 
-async def create_router_task(user_response: str) -> Task:
+async def create_router_task() -> Task:
     return Task(
-        description=f"""Route the given user response to the appropriate option: {user_response}
+        description="""Route the given user response to the appropriate option: {user_response}
         
         Options:
         1. "Evaluate Answer"
@@ -81,11 +103,11 @@ async def create_router_task(user_response: str) -> Task:
         """,
     )
 
-async def create_company_research_task(company_name: str, role: str, difficulty: str) -> Task:
+async def create_company_research_task() -> Task:
     """Create a task for researching a company."""
     return Task(
         name="Company Research Task",
-        description=f"""Research {company_name} and gather information about:
+        description="""Use the search tool and Research the {company} company and gather information about:
         1. Their technical interview process
         2. Common interview questions for {role} positions at {difficulty} difficulty level
         3. Technical stack and requirements
@@ -95,10 +117,10 @@ async def create_company_research_task(company_name: str, role: str, difficulty:
         expected_output="A report about the company's technical requirements and interview process",
     )
 
-async def create_question_preparation_task(difficulty: str, context: Task) -> Task:
+async def create_question_preparation_task(context: Task) -> Task:
     return Task(
         name="Question Preparation Task",
-        description=f"Prepare interview question and answer of {difficulty} difficulty based on the research provided.",
+        description="Prepare interview question and answer of {difficulty} difficulty based on the research provided.",
         agent=question_preparer_agent,
         expected_output="An interview question and its correct answer",
         output_pydantic=QuestionAnswerPair,
@@ -106,10 +128,9 @@ async def create_question_preparation_task(difficulty: str, context: Task) -> Ta
     )
 
 async def create_evaluation_task(
-    question: str, user_answer: str, correct_answer: str
 ) -> Task:
     return Task(
-        description=f"""Evaluate if the given answer is correct for the question:
+        description="""Evaluate if the given answer is correct for the question:
         Question: {question}
         User Answer: {user_answer}
         Correct Answer: {correct_answer}
@@ -122,7 +143,7 @@ async def create_evaluation_task(
         agent=answer_evaluator_agent,
     )
 
-async def create_follow_up_question_task(question: str, user_answer: str, difficulty: str, company: str, role: str) -> Task:
+async def create_follow_up_question_task() -> Task:
     return Task(
         description=""" Create a Follow-up Question and its answer based on the provided context below:
         Question: {question}
@@ -138,9 +159,9 @@ async def create_follow_up_question_task(question: str, user_answer: str, diffic
     )
 
 
-async def create_researcher_crew(company_name: str, role: str, difficulty: str,) -> Crew:
-    research_task = await create_company_research_task(company_name, role, difficulty)
-    question_task = await create_question_preparation_task(difficulty, research_task)
+async def create_researcher_crew() -> Crew:
+    research_task = await create_company_research_task()
+    question_task = await create_question_preparation_task(research_task)
     return Crew(
         agents=[
             company_researcher_agent,
@@ -150,39 +171,33 @@ async def create_researcher_crew(company_name: str, role: str, difficulty: str,)
             research_task,
             question_task,
         ],
-        memory=True,
+        memory=False,
         name="Researcher Crew",
+        verbose=True,
         description="This crew is responsible for researching companies and preparing interview questions.",
         process=Process.sequential,  # chain process
     )
 
 
-async def create_evaluator_crew(question: str, user_answer: str, correct_answer: str) -> Crew:
-    global evaluation_task
-    evaluation_task = await create_evaluation_task(question, user_answer, correct_answer)
+async def create_evaluator_crew() -> Crew:
+    evaluation_task = await create_evaluation_task()
     
     evaluation_crew = Crew(
         agents=[answer_evaluator_agent],
         tasks=[
             evaluation_task,
         ],
-        memory=True,
+        memory=False,
     )
     return evaluation_crew
 
 
-async def create_followup_crew(question: str, user_answer: str, difficulty: str, company: str, role: str) -> Crew:
-    follow_up_task = await create_follow_up_question_task(
-        question=question,
-        user_answer=user_answer,
-        difficulty=difficulty,
-        company=company,
-        role=role,
-    )
+async def create_followup_crew() -> Crew:
+    follow_up_task = await create_follow_up_question_task()
     followup_crew = Crew(
         agents=[follow_up_questioner_agent],
         tasks=[follow_up_task],
-        memory=True,
+        memory=False,
     )
     return followup_crew
 

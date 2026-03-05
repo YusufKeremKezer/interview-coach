@@ -54,12 +54,15 @@ class SttClient:
         # Using a Threading Event is safer for cross-thread communication
         self.mic_enabled = threading.Event()
         self.is_session_active = True
+        self.message = ""
 
 
     def on_turn(self,client: Type[StreamingClient], event: TurnEvent):
         logger.info(f"{event.transcript} ({event.end_of_turn})")
         if event.end_of_turn:
-            stt_message.message = event.transcript
+            self.message = event.transcript
+        else:
+            self.message = ""
 
 
     def on_terminated(self,client: Type[StreamingClient], event: TerminationEvent):
@@ -92,11 +95,12 @@ class SttClient:
         self.stt_client.on(StreamingEvents.Error, self.on_error)
 
         params = StreamingParameters(
+            speech_model="u3-rt-pro",
             sample_rate=16000,
             format_turns=True,
             end_of_turn_confidence_threshold=0.9,
-            min_turn_silence=800,
-            max_turn_silence=3600,
+            min_turn_silence=1500,
+            max_turn_silence=10000,
         )
         self.stt_client.connect(params)
 
@@ -106,7 +110,8 @@ class SttClient:
         self._connect_stt()
         try:
             # We pass the generator, not the raw mic_stream
-            self.stt_client.stream(self._audio_generator())
+            self.stt_client.stream(
+                self._audio_generator())
         except Exception as e:
             logger.error(f"Streaming error: {e}")
         finally:
@@ -117,6 +122,11 @@ class SttClient:
         thread.start()
         return thread
 
+def get_stt_client():
+    return SttClient()
+
+
+
 if __name__ == "__main__":
     client = SttClient()
     client.start_stt()
@@ -125,12 +135,10 @@ if __name__ == "__main__":
     print("Microphone Active")
     client.mic_enabled.set() 
     time.sleep(10)
-    
-    print("Microphone Muted")
     client.mic_enabled.clear()
-    time.sleep(5)
 
- 
+    print("Microphone Muted")
+    time.sleep(5)
 
 
 
