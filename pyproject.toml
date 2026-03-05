@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "assemblyai[extras]>=0.54.0",
-    "crewai>=1.6.1",
+    "crewai[google-genai]",
+    "crewai-tools>=1.6.1",
     "kokoro>=0.9.4",
-    "livekit-plugins-assemblyai>=1.4.4",
+    "litellm>=1.82.0",
+    "pip>=26.0.1",
     "python-dotenv>=1.2.2",
     "silero>=0.5.5",
+    "sounddevice>=0.5.5",
 ]
